@@ -17,6 +17,7 @@ func SetupRouter(client *objectstorage.BNBClient) *gin.Engine {
 	{
 		apiV1.POST("/upload", ctrl.UploadFolder)
 		apiV1.GET("/download", ctrl.DownloadFolder)
+		apiV1.GET("/helloWorld", ctrl.HelloWorld)
 	}
 
 	return r

@@ -98,3 +98,9 @@ func (c *Controller) DownloadFolder(ctx *gin.Context) {
 	ctx.Header("Content-Disposition", "attachment; filename=folder.zip")
 	ctx.Data(200, "application/zip", decryptedBytes)
 }
+
+func (c *Controller) HelloWorld(ctx *gin.Context) {
+	ctx.JSON(200, gin.H{
+		"msg": "Hello world!",
+	})
+}
