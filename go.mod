@@ -14,7 +14,7 @@ replace github.com/cosmos/iavl => github.com/bnb-chain/greenfield-iavl v0.20.1-a
 
 replace github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 
-go 1.19
+go 1.21
 
 require (
 	github.com/bnb-chain/greenfield v0.2.3
