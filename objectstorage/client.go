@@ -21,6 +21,9 @@ type BNBClient struct {
 }
 
 func (c *BNBClient) CreateObject(ctx context.Context, bucketName string, objectName string, buffer []byte) (string, error) {
+	txnBucketHash, _ := c.CreateBucket(ctx, bucketName)
+	log.Printf("Created/Checked bucket with txnHash: %v", txnBucketHash)
+
 	// Upload the object
 	txnHash, err := c.cli.CreateObject(ctx, bucketName, objectName, bytes.NewReader(buffer), types.CreateObjectOptions{})
 	waitObjectSeal(c.cli, bucketName, objectName)
