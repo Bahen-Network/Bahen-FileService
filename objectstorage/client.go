@@ -17,37 +17,58 @@ import (
 )
 
 type BNBClient struct {
-	cli client.Client
+	cli          client.Client
+	primarySP    string
+	chargedQuota uint64
+	visibility   storageTypes.VisibilityType
+	opts         types.CreateBucketOptions
 }
 
+func NewClient(privateKey string, chainId string, rpcAddr string) *BNBClient {
+	account, err := types.NewAccountFromPrivateKey("test", privateKey)
+	util.HandleErr(err, "New account from private key error")
+
+	cli, err := client.New(chainId, rpcAddr, client.Option{DefaultAccount: account})
+	util.HandleErr(err, "unable to new greenfield client")
+
+	c := &BNBClient{cli: cli}
+
+	// get storage providers list
+	ctx := context.Background() // Create a background context, can be replaced with a more relevant context if necessary
+	spLists, err := c.cli.ListStorageProviders(ctx, true)
+	util.HandleErr(err, "fail to list in service sps")
+
+	// choose the first sp to be the primary SP
+	c.primarySP = spLists[0].GetOperatorAddress()
+	log.Printf("primarySP:  %v", c.primarySP)
+
+	c.chargedQuota = uint64(100)
+	c.visibility = storageTypes.VISIBILITY_TYPE_PUBLIC_READ
+
+	c.opts = types.CreateBucketOptions{Visibility: c.visibility, ChargedQuota: c.chargedQuota}
+
+	return c
+}
 func (c *BNBClient) CreateObject(ctx context.Context, bucketName string, objectName string, buffer []byte) (string, error) {
 	txnBucketHash, _ := c.CreateBucket(ctx, bucketName)
 	log.Printf("Created/Checked bucket with txnHash: %v", txnBucketHash)
 
+	log.Printf("Start upload object")
 	// Upload the object
 	txnHash, err := c.cli.CreateObject(ctx, bucketName, objectName, bytes.NewReader(buffer), types.CreateObjectOptions{})
-	waitObjectSeal(c.cli, bucketName, objectName)
+	// waitObjectSeal(c.cli, bucketName, objectName)
 	if util.HandleErr(err, "CreateObject failed --------2---------.") {
 		return "", err
 	}
+
+	err = c.cli.PutObject(ctx, bucketName, objectName, int64(len(buffer)),
+		bytes.NewReader(buffer), types.PutObjectOptions{TxnHash: txnHash})
+	util.HandleErr(err, "PutObject")
 
 	log.Printf("CreateObject txnHash : %v", txnHash)
 
 	log.Printf("object: %s has been uploaded to SP\n", objectName)
 	return txnHash, nil
-}
-
-func (c *BNBClient) PutObject(ctx context.Context, bucketName string, objectName string, txnHash string, buffer []byte) error {
-	// Put the object
-
-	err := c.cli.PutObject(ctx, bucketName, objectName, int64(len(buffer)),
-		bytes.NewReader(buffer), types.PutObjectOptions{TxnHash: txnHash})
-	if util.HandleErr(err, "PutObject failed -------3-----------") {
-		return err
-	}
-
-	log.Printf("object: %s has been update\n", objectName)
-	return nil
 }
 
 func (c *BNBClient) GetObject(ctx context.Context, bucketName string, objectName string) ([]byte, error) {
@@ -58,42 +79,45 @@ func (c *BNBClient) GetObject(ctx context.Context, bucketName string, objectName
 		return nil, err
 	}
 
-	log.Printf("get object %s successfully, size %d.. ---   %v \n", info.ObjectName, info.Size, info)
-
+	log.Printf("get object %s successfully, size %d.. \n", info.ObjectName, info.Size)
 	objectBytes, err := io.ReadAll(reader)
-
-	log.Printf("%v", string(objectBytes))
 	return objectBytes, nil
 }
 
+func (c *BNBClient) ListObjects(ctx context.Context, bucketName string) (ObjectListResponse, error) {
+	objects, err := c.cli.ListObjects(ctx, bucketName, types.ListObjectsOptions{
+		ShowRemovedObject: false, Delimiter: "", MaxKeys: 100, EndPointOptions: &types.EndPointOptions{
+			Endpoint:  "",
+			SPAddress: "",
+		}})
+	if err != nil {
+		return ObjectListResponse{}, err
+	}
+
+	var response ObjectListResponse
+	for _, obj := range objects.Objects {
+		objectBytes, err := c.GetObject(ctx, bucketName, obj.ObjectInfo.ObjectName)
+		if err != nil {
+			util.HandleErr(err, "")
+			continue
+		}
+		objectInfo := ObjectInfo{
+			ObjectName: obj.ObjectInfo.ObjectName,
+			Data:       objectBytes,
+			Type:       obj.ObjectInfo.ContentType,
+		}
+		response.Objects = append(response.Objects, objectInfo)
+	}
+	return response, nil
+}
+
 func (c *BNBClient) CreateBucket(ctx context.Context, bucketName string) (string, error) {
-
-	// get storage providers list
-	spLists, err := c.cli.ListStorageProviders(ctx, true)
-	util.HandleErr(err, "fail to list in service sps")
-
-	//choose the first sp to be the primary SP
-	primarySP := spLists[0].GetOperatorAddress()
-	log.Printf("primarySP:  %v", primarySP)
-
-	chargedQuota := uint64(100)
-	visibility := storageTypes.VISIBILITY_TYPE_PUBLIC_READ
-	opts := types.CreateBucketOptions{Visibility: visibility, ChargedQuota: chargedQuota}
 	// bucketName : testbucket
-	txnBucketHash, err := c.cli.CreateBucket(ctx, bucketName, primarySP, opts)
+	txnBucketHash, err := c.cli.CreateBucket(ctx, bucketName, c.primarySP, c.opts)
 	util.HandleErr(err, "CreateBucket failed ------------1-------.")
 	log.Printf("Create Bucket: txnHash: %v", txnBucketHash)
 
 	return txnBucketHash, nil
-}
-
-func NewClient(privateKey string, chainId string, rpcAddr string) *BNBClient {
-	account, err := types.NewAccountFromPrivateKey("test", privateKey)
-	util.HandleErr(err, "New account from private key error")
-
-	cli, err := client.New(chainId, rpcAddr, client.Option{DefaultAccount: account})
-	util.HandleErr(err, "unable to new greenfield client")
-	return &BNBClient{cli}
 }
 
 func waitObjectSeal(cli client.Client, bucketName, objectName string) {

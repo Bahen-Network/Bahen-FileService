@@ -2,12 +2,14 @@
 
 package objectstorage
 
-type Folder struct {
-	Objects []Object `json:"objects"`
+// ObjectListResponse represents the response structure for listing objects.
+type ObjectListResponse struct {
+	Objects []ObjectInfo `json:"objects"`
 }
 
-type Object struct {
-	Name        string `json:"name"`
-	Size        int64  `json:"size"`
-	ContentType string `json:"contentType"`
+// ObjectInfo provides detailed information for a single object.
+type ObjectInfo struct {
+	ObjectName string `json:"objectName"`
+	Data       []byte `json:"data"`
+	Type       string
 }

@@ -15,8 +15,17 @@ func SetupRouter(client *objectstorage.BNBClient) *gin.Engine {
 
 	apiV1 := r.Group("/api/v1")
 	{
-		apiV1.POST("/upload", ctrl.UploadFolder)
-		apiV1.GET("/download", ctrl.DownloadFolder)
+		// objectName: string
+		// bucketName: string
+		// folder: file
+		apiV1.POST("/objects", ctrl.PostObject)
+
+		// objectName: string
+		// bucketName: string
+		apiV1.GET("/objects", ctrl.GetObject)
+
+		// bucketName: string
+		apiV1.GET("/buckets/objects", ctrl.ListObjects)
 		apiV1.GET("/helloWorld", ctrl.HelloWorld)
 	}
 
