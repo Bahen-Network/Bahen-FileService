@@ -7,9 +7,10 @@ import (
 	"file-service/objectstorage"
 	"file-service/util"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"io"
 	"log"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Controller struct {
@@ -30,10 +31,15 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 		return
 	}
 
+	if bucketName == "" {
+		ctx.JSON(400, gin.H{"error": "bucketName is required in form data"})
+		return
+	}
+
 	file, err := ctx.FormFile("folder")
 	if err != nil {
 		util.HandleErr(err, "ctx.FormFile")
-		ctx.JSON(500, gin.H{"error": "Error in retrieving the folder form file."})
+		ctx.JSON(500, gin.H{"error": fmt.Sprintf("Error in retrieving the folder form file. %v", err)})
 		return
 	}
 
@@ -57,7 +63,7 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 	}
 	_, err = c.client.CreateObject(ctx.Request.Context(), bucketName, objectName, encryptedBytes)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Failed to upload to BNBClient."})
+		ctx.JSON(500, gin.H{"error": fmt.Sprintf("Failed to upload to BNBClient. %v", err)})
 		return
 	}
 
