@@ -1,6 +1,6 @@
-// objectstorage/models.go
+// objectstorage/object.go
 
-package objectstorage
+package models
 
 // ObjectListResponse represents the response structure for listing objects.
 type ObjectListResponse struct {

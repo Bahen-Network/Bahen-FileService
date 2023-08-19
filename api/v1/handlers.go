@@ -6,9 +6,9 @@ import (
 	"file-service/config"
 	"file-service/objectstorage"
 	"file-service/util"
-	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,50 +20,55 @@ type Controller struct {
 func NewController(client *objectstorage.BNBClient) *Controller {
 	return &Controller{client: client}
 }
-
 func (c *Controller) PostObject(ctx *gin.Context) {
 	log.Printf("1-1. UploadFolder start!")
 
 	objectName := ctx.PostForm("objectName")
 	bucketName := ctx.PostForm("bucketName")
 	if objectName == "" {
-		ctx.JSON(400, gin.H{"error": "objectName is required in form data"})
+		util.ReportError(ctx, nil, util.ObjectNameArgumentError)
 		return
 	}
 
 	if bucketName == "" {
-		ctx.JSON(400, gin.H{"error": "bucketName is required in form data"})
+		util.ReportError(ctx, nil, util.BucketNameArgumentError)
 		return
 	}
 
 	file, err := ctx.FormFile("folder")
 	if err != nil {
-		util.HandleErr(err, "ctx.FormFile")
-		ctx.JSON(500, gin.H{"error": fmt.Sprintf("Error in retrieving the folder form file. %v", err)})
+		util.ReportError(ctx, err, util.FormDataFileRetrieveError)
 		return
 	}
 
 	fileBytes, err := file.Open()
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Error in opening the uploaded file."})
+		util.ReportError(ctx, err, util.FileOpenError)
 		return
 	}
-	defer fileBytes.Close()
+
+	defer func(fileBytes multipart.File) {
+		err := fileBytes.Close()
+		if err != nil {
+			util.ReportError(ctx, err, util.FileOpenError)
+		}
+	}(fileBytes)
 
 	var buffer bytes.Buffer
 	if _, err := io.Copy(&buffer, fileBytes); err != nil {
-		ctx.JSON(500, gin.H{"error": "Reading uploaded file failed."})
+		util.ReportError(ctx, err, util.FileReadError)
 		return
 	}
 
 	encryptedBytes, err := util.Encrypt(buffer.Bytes(), config.PrivateAESKey)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Encryption failed."})
+		util.ReportError(ctx, err, util.EncryptionError)
 		return
 	}
+
 	_, err = c.client.CreateObject(ctx.Request.Context(), bucketName, objectName, encryptedBytes)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": fmt.Sprintf("Failed to upload to BNBClient. %v", err)})
+		util.ReportError(ctx, err, util.BNBClientUploadError)
 		return
 	}
 
@@ -72,29 +77,28 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 		"msg": "folder uploaded",
 	})
 }
-
 func (c *Controller) GetObject(ctx *gin.Context) {
 	objectName := ctx.PostForm("objectName")
 	bucketName := ctx.PostForm("bucketName")
 	if objectName == "" {
-		ctx.JSON(400, gin.H{"error": "objectName is required in form data"})
+		util.ReportError(ctx, nil, util.ObjectNameArgumentError)
 		return
 	}
 
 	if bucketName == "" {
-		ctx.JSON(400, gin.H{"error": "bucketName is required in form data"})
+		util.ReportError(ctx, nil, util.BucketNameArgumentError)
 		return
 	}
 
 	zipBytes, err := c.client.GetObject(ctx.Request.Context(), bucketName, objectName)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Failed to getObject from BNB to BNBClient."})
+		util.ReportError(ctx, err, util.BNBClientUploadError)
 		return
 	}
 
 	decryptedBytes, err := util.Decrypt(zipBytes, config.PrivateAESKey)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Decryption failed."})
+		util.ReportError(ctx, err, util.DecryptionError)
 		return
 	}
 
@@ -105,40 +109,38 @@ func (c *Controller) GetObject(ctx *gin.Context) {
 func (c *Controller) ListObjects(ctx *gin.Context) {
 	bucketName := ctx.PostForm("bucketName")
 	if bucketName == "" {
-		ctx.JSON(400, gin.H{"error": "bucketName is required in form data"})
+		util.ReportError(ctx, nil, util.BucketNameArgumentError)
 		return
 	}
 
 	folder, err := c.client.ListObjects(ctx.Request.Context(), bucketName)
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Failed to getObject from BNB to BNBClient."})
+		util.ReportError(ctx, err, util.BNBClientUploadError)
 		return
 	}
 
-	// Create a new zip containing the decrypted objects.
 	var buffer bytes.Buffer
 	zipWriter := zip.NewWriter(&buffer)
 	for _, obj := range folder.Objects {
 		decryptedByte, err := util.Decrypt(obj.Data, config.PrivateAESKey)
 		if err != nil {
-			util.HandleErr(err, "")
-			ctx.JSON(500, gin.H{"error": fmt.Sprintf("Decryption failed for the object: %s.", obj.ObjectName)})
+			util.ReportError(ctx, err, util.DecryptionError)
 			return
 		}
 		zipFile, err := zipWriter.Create(obj.ObjectName + ".zip")
 		if err != nil {
-			ctx.JSON(500, gin.H{"error": "Failed to create new zip entry."})
+			util.ReportError(ctx, err, util.ZipEntryCreationError)
 			return
 		}
 		_, err = zipFile.Write(decryptedByte)
 		if err != nil {
-			ctx.JSON(500, gin.H{"error": "Failed to write decrypted file to new zip."})
+			util.ReportError(ctx, err, util.ZipWriteError)
 			return
 		}
 	}
 	err = zipWriter.Close()
 	if err != nil {
-		ctx.JSON(500, gin.H{"error": "Failed to finalize new zip file."})
+		util.ReportError(ctx, err, util.ZipFinalizeError)
 		return
 	}
 

@@ -3,6 +3,7 @@ package router
 
 import (
 	v1 "file-service/api/v1"
+	"file-service/middleware"
 	"file-service/objectstorage"
 	"github.com/gin-gonic/gin"
 )
@@ -11,6 +12,7 @@ func SetupRouter(client *objectstorage.BNBClient) *gin.Engine {
 
 	r := gin.Default()
 	r.Use(gin.Logger())
+	r.Use(middleware.ErrorHandlingMiddleware())
 	ctrl := v1.NewController(client)
 
 	apiV1 := r.Group("/api/v1")

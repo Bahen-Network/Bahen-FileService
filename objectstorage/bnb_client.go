@@ -1,4 +1,4 @@
-// objectstorage/client.go
+// objectstorage/bnb_client.go
 
 package objectstorage
 
@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"file-service/models"
 	"file-service/util"
 	"fmt"
 	"github.com/bnb-chain/greenfield-go-sdk/client"
@@ -84,24 +85,24 @@ func (c *BNBClient) GetObject(ctx context.Context, bucketName string, objectName
 	return objectBytes, nil
 }
 
-func (c *BNBClient) ListObjects(ctx context.Context, bucketName string) (ObjectListResponse, error) {
+func (c *BNBClient) ListObjects(ctx context.Context, bucketName string) (models.ObjectListResponse, error) {
 	objects, err := c.cli.ListObjects(ctx, bucketName, types.ListObjectsOptions{
 		ShowRemovedObject: false, Delimiter: "", MaxKeys: 100, EndPointOptions: &types.EndPointOptions{
 			Endpoint:  "",
 			SPAddress: "",
 		}})
 	if err != nil {
-		return ObjectListResponse{}, err
+		return models.ObjectListResponse{}, err
 	}
 
-	var response ObjectListResponse
+	var response models.ObjectListResponse
 	for _, obj := range objects.Objects {
 		objectBytes, err := c.GetObject(ctx, bucketName, obj.ObjectInfo.ObjectName)
 		if err != nil {
 			util.HandleErr(err, "")
 			continue
 		}
-		objectInfo := ObjectInfo{
+		objectInfo := models.ObjectInfo{
 			ObjectName: obj.ObjectInfo.ObjectName,
 			Data:       objectBytes,
 			Type:       obj.ObjectInfo.ContentType,
