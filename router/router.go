@@ -13,6 +13,8 @@ func SetupRouter(client *objectstorage.BNBClient) *gin.Engine {
 	r := gin.Default()
 	r.Use(gin.Logger())
 	r.Use(middleware.ErrorHandlingMiddleware())
+	r.Use(middleware.CORSMiddleware())
+
 	ctrl := v1.NewController(client)
 
 	apiV1 := r.Group("/api/v1")
