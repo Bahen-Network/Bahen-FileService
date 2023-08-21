@@ -2,8 +2,8 @@ package main
 
 import (
 	"file-service/config"
-	"file-service/objectstorage"
 	"file-service/router"
+	"file-service/storageclient"
 	common "file-service/util"
 )
 
@@ -13,7 +13,7 @@ func main() {
 	// init config
 	config.Init()
 
-	client := objectstorage.NewClient(config.PrivateKey, config.ChainId, config.RpcAddr)
+	client := storageclient.NewClient(config.PrivateKey, config.ChainId, config.RpcAddr)
 
 	app := router.SetupRouter(client)
 

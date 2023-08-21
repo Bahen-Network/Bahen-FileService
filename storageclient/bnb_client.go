@@ -1,6 +1,6 @@
-// objectstorage/bnb_client.go
+// storageclient/bnb_client.go
 
-package objectstorage
+package storageclient
 
 import (
 	"bytes"
@@ -50,6 +50,7 @@ func NewClient(privateKey string, chainId string, rpcAddr string) *BNBClient {
 
 	return c
 }
+
 func (c *BNBClient) CreateObject(ctx context.Context, bucketName string, objectName string, buffer []byte) (string, error) {
 	txnBucketHash, _ := c.CreateBucket(ctx, bucketName)
 	log.Printf("Created/Checked bucket with txnHash: %v", txnBucketHash)

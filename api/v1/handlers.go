@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"file-service/config"
-	"file-service/objectstorage"
+	"file-service/storageclient"
 	"file-service/util"
 	"io"
 	"log"
@@ -14,10 +14,10 @@ import (
 )
 
 type Controller struct {
-	client *objectstorage.BNBClient
+	client *storageclient.BNBClient
 }
 
-func NewController(client *objectstorage.BNBClient) *Controller {
+func NewController(client *storageclient.BNBClient) *Controller {
 	return &Controller{client: client}
 }
 func (c *Controller) PostObject(ctx *gin.Context) {
@@ -77,6 +77,7 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 		"msg": "folder uploaded",
 	})
 }
+
 func (c *Controller) GetObject(ctx *gin.Context) {
 	objectName := ctx.PostForm("objectName")
 	bucketName := ctx.PostForm("bucketName")
@@ -127,7 +128,7 @@ func (c *Controller) ListObjects(ctx *gin.Context) {
 			util.ReportError(ctx, err, util.DecryptionError)
 			return
 		}
-		zipFile, err := zipWriter.Create(obj.ObjectName + ".zip")
+		zipFile, err := zipWriter.Create(obj.ObjectName)
 		if err != nil {
 			util.ReportError(ctx, err, util.ZipEntryCreationError)
 			return

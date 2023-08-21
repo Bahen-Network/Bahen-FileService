@@ -4,11 +4,11 @@ package router
 import (
 	v1 "file-service/api/v1"
 	"file-service/middleware"
-	"file-service/objectstorage"
+	"file-service/storageclient"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(client *objectstorage.BNBClient) *gin.Engine {
+func SetupRouter(client *storageclient.BNBClient) *gin.Engine {
 
 	r := gin.Default()
 	r.Use(gin.Logger())

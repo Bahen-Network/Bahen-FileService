@@ -1,4 +1,4 @@
-// objectstorage/object.go
+// storageclient/object.go
 
 package models
 
