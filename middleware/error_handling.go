@@ -1,10 +1,9 @@
 package middleware
 
 import (
-	"errors"
 	"file-service/util"
 	"github.com/gin-gonic/gin"
-	"log"
+	"github.com/pkg/errors"
 	"net/http"
 )
 
@@ -12,16 +11,31 @@ func ErrorHandlingMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Next()
 
+		// If there are any errors
 		if len(ctx.Errors) > 0 {
-			err := ctx.Errors[0].Err
-			log.Printf("ErrorHandlingMiddelware - error: %v", err)
-			var customErr util.ErrorResponse
+			allErrors := make([]util.ErrorResponse, len(ctx.Errors))
 
-			if errors.As(err, &customErr) {
-				ctx.JSON(customErr.Code, customErr)
-			} else {
-				ctx.JSON(http.StatusInternalServerError, util.NewErrorResponse(http.StatusInternalServerError, 0, "Internal Server Error", err.Error(), err))
+			// Loop through all errors and fill allErrors
+			for i, ctxErr := range ctx.Errors {
+				var customErr util.ErrorResponse
+				if errors.As(ctxErr.Err, &customErr) {
+					// Append original error and its stack trace
+					customErr.ErrorStack = errors.Cause(ctxErr.Err).Error()
+					allErrors[i] = customErr
+				} else {
+					// For non-custom errors, just get the stack trace
+					allErrors[i] = util.ErrorResponse{
+						Code:          http.StatusInternalServerError,
+						Message:       "Internal Server Error",
+						Detail:        ctxErr.Err.Error(),
+						OriginalError: ctxErr.Err,
+						ErrorStack:    errors.Cause(ctxErr.Err).Error(),
+					}
+				}
 			}
+
+			// Return all errors as an array in the response
+			ctx.JSON(http.StatusInternalServerError, allErrors)
 		}
 	}
 }

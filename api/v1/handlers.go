@@ -4,11 +4,15 @@ import (
 	"archive/zip"
 	"bytes"
 	"file-service/config"
+	"file-service/models"
 	"file-service/storageclient"
 	"file-service/util"
+	"fmt"
+	"github.com/gin-gonic/gin/binding"
 	"io"
 	"log"
 	"mime/multipart"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,21 +24,17 @@ type Controller struct {
 func NewController(client *storageclient.BNBClient) *Controller {
 	return &Controller{client: client}
 }
+
 func (c *Controller) PostObject(ctx *gin.Context) {
+	var body models.PostObjectRequestBody
+	if err := ctx.ShouldBindWith(&body, binding.Form); err != nil {
+		util.ReportError(ctx, err, util.ParseBindError(err))
+		return
+	}
+	objectName := body.ObjectName
+	bucketName := body.BucketName
+
 	log.Printf("1-1. UploadFolder start!")
-
-	objectName := ctx.PostForm("objectName")
-	bucketName := ctx.PostForm("bucketName")
-	if objectName == "" {
-		util.ReportError(ctx, nil, util.ObjectNameArgumentError)
-		return
-	}
-
-	if bucketName == "" {
-		util.ReportError(ctx, nil, util.BucketNameArgumentError)
-		return
-	}
-
 	file, err := ctx.FormFile("folder")
 	if err != nil {
 		util.ReportError(ctx, err, util.FormDataFileRetrieveError)
@@ -66,7 +66,7 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 		return
 	}
 
-	_, err = c.client.CreateObject(ctx.Request.Context(), bucketName, objectName, encryptedBytes)
+	_, err = c.client.CreateObject(ctx, bucketName, objectName, encryptedBytes)
 	if err != nil {
 		util.ReportError(ctx, err, util.BNBClientUploadError)
 		return
@@ -78,18 +78,37 @@ func (c *Controller) PostObject(ctx *gin.Context) {
 	})
 }
 
+// parseRangeHeader to parse HTTP Range header
+func parseRangeHeader(header string) (start, end int64, err error) {
+	_, err = fmt.Sscanf(header, "bytes=%d-%d", &start, &end)
+	return
+}
+
+func getValidatedParams(ctx *gin.Context) (map[string]string, bool) {
+	paramValuesInterface, ok := ctx.Get("ValidatedParams")
+	if !ok {
+		util.ReportError(ctx, nil, util.ParametersNotValidatedError)
+		return nil, false
+	}
+
+	paramValues, ok := paramValuesInterface.(map[string]string)
+	if !ok {
+		util.ReportError(ctx, nil, util.ReadingParametersError)
+		return nil, false
+	}
+
+	return paramValues, true
+}
+
 func (c *Controller) GetObject(ctx *gin.Context) {
-	objectName := ctx.PostForm("objectName")
-	bucketName := ctx.PostForm("bucketName")
-	if objectName == "" {
-		util.ReportError(ctx, nil, util.ObjectNameArgumentError)
+	paramValues, ok := getValidatedParams(ctx)
+	if !ok {
+		util.ReportError(ctx, nil, util.GetValidatedParametersError)
 		return
 	}
 
-	if bucketName == "" {
-		util.ReportError(ctx, nil, util.BucketNameArgumentError)
-		return
-	}
+	objectName := paramValues["objectName"]
+	bucketName := paramValues["bucketName"]
 
 	zipBytes, err := c.client.GetObject(ctx.Request.Context(), bucketName, objectName)
 	if err != nil {
@@ -103,20 +122,24 @@ func (c *Controller) GetObject(ctx *gin.Context) {
 		return
 	}
 
-	ctx.Header("Content-Disposition", "attachment; filename=folder.zip")
+	// Set Content-Length header
+	ctx.Header("Content-Length", strconv.Itoa(len(decryptedBytes)))
+
+	ctx.Header("Content-Disposition", "attachment; filename="+objectName)
+
 	ctx.Data(200, "application/zip", decryptedBytes)
 }
 
 func (c *Controller) ListObjects(ctx *gin.Context) {
-	bucketName := ctx.PostForm("bucketName")
+	bucketName := ctx.Query("bucketName")
 	if bucketName == "" {
-		util.ReportError(ctx, nil, util.BucketNameArgumentError)
+		util.ReportError(ctx, nil, util.GetBucketNameArgumentError)
 		return
 	}
 
-	folder, err := c.client.ListObjects(ctx.Request.Context(), bucketName)
+	folder, err := c.client.ListObjects(ctx, bucketName)
 	if err != nil {
-		util.ReportError(ctx, err, util.BNBClientUploadError)
+		util.ReportError(ctx, err, util.BNBClientDownloadError)
 		return
 	}
 
@@ -145,6 +168,8 @@ func (c *Controller) ListObjects(ctx *gin.Context) {
 		return
 	}
 
+	// Set Content-Length header
+	ctx.Header("Content-Length", strconv.Itoa(len(buffer.Bytes())))
 	ctx.Header("Content-Disposition", "attachment; filename=aggregated.zip")
 	ctx.Data(200, "application/zip", buffer.Bytes())
 }

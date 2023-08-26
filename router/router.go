@@ -5,6 +5,7 @@ import (
 	v1 "file-service/api/v1"
 	"file-service/middleware"
 	"file-service/storageclient"
+	"file-service/util"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,7 +27,11 @@ func SetupRouter(client *storageclient.BNBClient) *gin.Engine {
 
 		// objectName: string
 		// bucketName: string
-		apiV1.GET("/objects", ctrl.GetObject)
+		apiV1.GET("/objects", middleware.ParamChecker("query", map[string]*util.Error{
+			"objectName": util.GetObjectNameArgumentError,
+			"bucketName": util.GetBucketNameArgumentError,
+			//"userAdress": util.GetUserAdressArgumentError,
+		}), ctrl.GetObject)
 
 		// bucketName: string
 		apiV1.GET("/buckets/objects", ctrl.ListObjects)
