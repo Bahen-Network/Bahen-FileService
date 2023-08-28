@@ -112,6 +112,36 @@ func (c *Controller) GetObject(ctx *gin.Context) {
 
 	objectName := paramValues["objectName"]
 	bucketName := paramValues["bucketName"]
+
+	zipBytes, err := c.client.GetObject(ctx, bucketName, objectName)
+	if err != nil {
+		util.ReportError(ctx, err, util.BNBClientUploadError)
+		return
+	}
+
+	decryptedBytes, err := util.Decrypt(zipBytes, config.PrivateAESKey)
+	if err != nil {
+		util.ReportError(ctx, err, util.DecryptionError)
+		return
+	}
+
+	// Set Content-Length header
+	ctx.Header("Content-Length", strconv.Itoa(len(decryptedBytes)))
+
+	ctx.Header("Content-Disposition", "attachment; filename="+objectName)
+
+	ctx.Data(200, "application/zip", decryptedBytes)
+}
+
+func (c *Controller) GetObjectResumable(ctx *gin.Context) {
+	paramValues, ok := getValidatedParams(ctx)
+	if !ok {
+		util.ReportError(ctx, nil, util.GetValidatedParametersError)
+		return
+	}
+
+	objectName := paramValues["objectName"]
+	bucketName := paramValues["bucketName"]
 	userAdress := paramValues["userAdress"]
 
 	filePath, err := c.client.GetObjectResumable(ctx, bucketName, objectName, userAdress)

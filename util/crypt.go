@@ -8,19 +8,28 @@ import (
 	"io"
 )
 
-func Encrypt(data []byte, key []byte) ([]byte, error) {
+const nonceSize = 12
+
+func newGCMCipher(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
+	return cipher.NewGCM(block)
+}
 
-	nonce := make([]byte, 12)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+func Encrypt(data []byte, key []byte) ([]byte, error) {
+	if len(key) != 16 && len(key) != 24 && len(key) != 32 {
+		return nil, errors.New("invalid key size")
+	}
+
+	aesgcm, err := newGCMCipher(key)
+	if err != nil {
 		return nil, err
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
+	nonce := make([]byte, nonceSize)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
 
@@ -29,21 +38,20 @@ func Encrypt(data []byte, key []byte) ([]byte, error) {
 }
 
 func Decrypt(data []byte, key []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+	if len(key) != 16 && len(key) != 24 && len(key) != 32 {
+		return nil, errors.New("invalid key size")
+	}
+
+	aesgcm, err := newGCMCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(data) < 12 {
+	if len(data) < nonceSize {
 		return nil, errors.New("ciphertext too short")
 	}
 
-	nonce, ciphertext := data[:12], data[12:]
-	aesgcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, err

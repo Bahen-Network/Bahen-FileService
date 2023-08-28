@@ -25,13 +25,17 @@ func SetupRouter(client *storageclient.BNBClient) *gin.Engine {
 		// folder: file
 		apiV1.POST("/objects", ctrl.PostObject)
 
-		// objectName: string
-		// bucketName: string
 		apiV1.GET("/objects", middleware.ParamChecker("query", map[string]*util.Error{
 			"objectName": util.GetObjectNameArgumentError,
 			"bucketName": util.GetBucketNameArgumentError,
 			"userAdress": util.GetUserAdressArgumentError,
 		}), ctrl.GetObject)
+
+		apiV1.GET("/objects/resumable", middleware.ParamChecker("query", map[string]*util.Error{
+			"objectName": util.GetObjectNameArgumentError,
+			"bucketName": util.GetBucketNameArgumentError,
+			"userAdress": util.GetUserAdressArgumentError,
+		}), ctrl.GetObjectResumable)
 
 		// bucketName: string
 		apiV1.GET("/buckets/objects", ctrl.ListObjects)

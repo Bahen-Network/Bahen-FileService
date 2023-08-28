@@ -18,7 +18,9 @@ func main() {
 	app := router.SetupRouter(client)
 
 	// Run cleanup in background after all initializations
-	// go storageclient.CleanupOldFiles() // Assuming the function is placed inside storageclient
+	go func() {
+		storageclient.CleanupOldFiles()
+	}()
 
 	// Run http service.
 	err := app.Run()

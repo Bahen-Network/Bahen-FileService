@@ -3,9 +3,12 @@
 package config
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"github.com/Azure/azure-sdk-for-go/services/keyvault/v7.0/keyvault"
+	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"os"
 )
 
@@ -14,14 +17,61 @@ var (
 	ChainId       string
 	PrivateKey    string
 	PrivateAESKey []byte
+	KeyValutURL   string
 )
 
 func Init() {
-	RpcAddr = "https://gnfd-testnet-fullnode-tendermint-us.bnbchain.org:443"
-	ChainId = "greenfield_5600-1"
-	PrivateKey = "86c6252d772b7a85fd566e19d1dab0a7f6b246348bc133689633db4c0322cb14"
-	PrivateAESKey, _ = base64.StdEncoding.DecodeString("9Z8wR5lNzKABaZa45jSt7h7J59RHbDm9aLbCFQqKInk=")
+	KeyValutURL = "https://bahenfileservice.vault.azure.net"
+	RpcAddr, _ = GetSecretFromVault(KeyValutURL, "RpcAddr")
+	ChainId, _ = GetSecretFromVault(KeyValutURL, "ChainId")
+	PrivateKey, _ = GetSecretFromVault(KeyValutURL, "PrivateKey")
+	PrivateAESKeyStr, _ := GetSecretFromVault(KeyValutURL, "PrivateAESKey")
+	PrivateAESKey, _ = base64.StdEncoding.DecodeString(PrivateAESKeyStr)
 	//PrivateAESKey, _ = generateAESKey(256)
+}
+
+// GetSecretFromVault retrieves a secret string from Azure Key Vault or returns dummy values if running locally.
+func GetSecretFromVault(vaultURL string, secretName string) (string, error) {
+	// Check for an environment variable to determine if we're running locally
+	if os.Getenv("RUNNING_Azure") == "" {
+		return getLocalDummyValue(secretName), nil
+	}
+
+	client := keyvault.New()
+
+	// Use the Azure environment based authentication
+	authorizer, err := auth.NewAuthorizerFromEnvironment()
+	if err != nil {
+		return "", err
+	}
+	client.Authorizer = authorizer
+
+	// Construct the full secret URL
+	secretURL := vaultURL + "/secrets/" + secretName
+
+	secretBundle, err := client.GetSecret(context.Background(), KeyValutURL, secretURL, "")
+	if err != nil {
+		return "", err
+	}
+
+	return *secretBundle.Value, nil
+}
+
+// getLocalDummyValue returns a dummy value for the given secret name when running locally.
+func getLocalDummyValue(secretName string) string {
+	// replace these value to true value.
+	switch secretName {
+	case "RpcAddr":
+		return "RpcAddr"
+	case "ChainId":
+		return "ChainId"
+	case "PrivateKey":
+		return "PrivateKey"
+	case "PrivateAESKey":
+		return "PrivateAESKey"
+	default:
+		return "unknown-secret"
+	}
 }
 
 func generateAESKey(bits int) ([]byte, error) {

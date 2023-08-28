@@ -11,6 +11,7 @@ type LocalClient struct {
 	BasePath string
 }
 
+// to test locally
 func NewLocalClient(basePath string) *LocalClient {
 	return &LocalClient{BasePath: basePath}
 }

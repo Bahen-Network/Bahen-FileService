@@ -1,19 +1,15 @@
-# How to deploy the project to the azure:
+# Bahen-FileService
 
-###  1.Use VSCode docker extensions to build image.(remember your tag)
-![Alt text](setp1.png)
+# 1. Introduction
+Bahen FileService is a Go-based Web 2.0 service integral to the Bahen project. It serves as a dedicated storage solution for user-uploaded training data, pre-trained models, and the models processed by workers. Key features include:
 
-### 2. Wait the build.
-![Alt text](step2.png)
+- Upload and Download Support: Seamless integration allowing both uploads from users and downloads by the network's workers.
+- Integration with BNB Greenfield: Data is securely stored in the BNB Greenfield, ensuring reliability and scalability.
+-  Before storing the data in BNB, we will use AES encryption, and then when downloading the data, we will try to decrypt the data first and then send it to the user
+- Open source processing: By maintaining transparency and openness in intermediate processing, we make every effort to ensure Bahen's decentralization
 
-### 3. Test to run the image.
-![Alt text](step3.png)
+Through Bahen FileService, we strive to provide a robust storage solution while preserving the decentralized ethos of the Bahen project.
+## [2. BNB Storage Client Guide](BnbStorageClient.md)
 
-### 4. If image successfully runs, push it to the registries.
-![Alt text](step4.png)
+## [3. Deploy project to azure web app.](How_to_deploy.md)
 
-### 5.1 Deploy this image by create a new web app.
-![Alt text](step5.1.png)
-
-### 5.2 Deplpoy this image by using existing web app.
-![Alt text](step5.2.png)

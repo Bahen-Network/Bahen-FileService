@@ -98,7 +98,7 @@ func (c *BNBClient) CreateObject(ctx *gin.Context, bucketName string, objectName
 			DisableResumable: false,
 			TxnHash:          txnHash})
 
-	// waitObjectSeal(c.cli, bucketName, objectName)
+	waitObjectSeal(c.cli, bucketName, objectName)
 
 	util.HandleErr(err, "PutObject")
 
@@ -180,7 +180,7 @@ func (c *BNBClient) GetObjectResumable(ctx *gin.Context, bucketName string, obje
 			return "", err
 		}
 	}
-	// 4) rename temp file
+	// rename temp file
 	err = os.Rename(filePath, baseTempFilePath)
 	if err != nil {
 		return "", err
