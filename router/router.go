@@ -30,7 +30,7 @@ func SetupRouter(client *storageclient.BNBClient) *gin.Engine {
 		apiV1.GET("/objects", middleware.ParamChecker("query", map[string]*util.Error{
 			"objectName": util.GetObjectNameArgumentError,
 			"bucketName": util.GetBucketNameArgumentError,
-			//"userAdress": util.GetUserAdressArgumentError,
+			"userAdress": util.GetUserAdressArgumentError,
 		}), ctrl.GetObject)
 
 		// bucketName: string

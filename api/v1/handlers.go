@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin/binding"
 	"io"
+	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -109,14 +112,56 @@ func (c *Controller) GetObject(ctx *gin.Context) {
 
 	objectName := paramValues["objectName"]
 	bucketName := paramValues["bucketName"]
+	userAdress := paramValues["userAdress"]
 
-	zipBytes, err := c.client.GetObject(ctx.Request.Context(), bucketName, objectName)
+	filePath, err := c.client.GetObjectResumable(ctx, bucketName, objectName, userAdress)
 	if err != nil {
-		util.ReportError(ctx, err, util.BNBClientUploadError)
+		util.ReportError(ctx, err, util.BNBClientDownloadError)
 		return
 	}
 
-	decryptedBytes, err := util.Decrypt(zipBytes, config.PrivateAESKey)
+	file, err := os.Open(filePath)
+	if err != nil {
+		util.ReportError(ctx, err, util.FileOpenError)
+		return
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		util.ReportError(ctx, err, util.FileStatError)
+		return
+	}
+
+	var buffer []byte
+	rangeHeader := ctx.GetHeader("Range")
+	if rangeHeader != "" {
+		start, end, err := parseRangeHeader(rangeHeader)
+		if err != nil {
+			util.ReportError(ctx, err, util.InvalidRangeHeader)
+			return
+		}
+
+		bytesToRead := end - start + 1
+		buffer = make([]byte, bytesToRead)
+		file.Seek(start, io.SeekStart)
+		_, err = file.Read(buffer)
+		if err != nil && err != io.EOF {
+			util.ReportError(ctx, err, util.FileReadError)
+			return
+		}
+
+		ctx.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileInfo.Size()))
+		ctx.Writer.WriteHeader(http.StatusPartialContent)
+	} else {
+		buffer, err = ioutil.ReadAll(file)
+		if err != nil {
+			util.ReportError(ctx, err, util.FileReadError)
+			return
+		}
+	}
+
+	decryptedBytes, err := util.Decrypt(buffer, config.PrivateAESKey)
 	if err != nil {
 		util.ReportError(ctx, err, util.DecryptionError)
 		return

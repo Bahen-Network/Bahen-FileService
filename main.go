@@ -17,6 +17,9 @@ func main() {
 
 	app := router.SetupRouter(client)
 
+	// Run cleanup in background after all initializations
+	// go storageclient.CleanupOldFiles() // Assuming the function is placed inside storageclient
+
 	// Run http service.
 	err := app.Run()
 	common.HandleErr(err, "Gin run failed.")

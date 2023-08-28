@@ -12,13 +12,18 @@ import (
 	"github.com/bnb-chain/greenfield-go-sdk/client"
 	"github.com/bnb-chain/greenfield-go-sdk/types"
 	storageTypes "github.com/bnb-chain/greenfield/x/storage/types"
+	"github.com/gin-gonic/gin"
 	"io"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 )
 
 type BNBClient struct {
 	cli          client.Client
+	account      *types.Account
 	primarySP    string
 	chargedQuota uint64
 	visibility   storageTypes.VisibilityType
@@ -32,7 +37,10 @@ func NewClient(privateKey string, chainId string, rpcAddr string) *BNBClient {
 	cli, err := client.New(chainId, rpcAddr, client.Option{DefaultAccount: account})
 	util.HandleErr(err, "unable to new greenfield client")
 
-	c := &BNBClient{cli: cli}
+	c := &BNBClient{
+		cli:     cli,
+		account: account,
+	}
 
 	// get storage providers list
 	ctx := context.Background() // Create a background context, can be replaced with a more relevant context if necessary
@@ -51,20 +59,47 @@ func NewClient(privateKey string, chainId string, rpcAddr string) *BNBClient {
 	return c
 }
 
-func (c *BNBClient) CreateObject(ctx context.Context, bucketName string, objectName string, buffer []byte) (string, error) {
-	txnBucketHash, _ := c.CreateBucket(ctx, bucketName)
-	log.Printf("Created/Checked bucket with txnHash: %v", txnBucketHash)
+func (c *BNBClient) CreateBucket(ctx *gin.Context, bucketName string) (string, error) {
+	// bucketName : testbucket
+	txnBucketHash, err := c.cli.CreateBucket(ctx, bucketName, c.primarySP, c.opts)
+	util.HandleErr(err, "CreateBucket failed ------------1-------.")
+	log.Printf("Create Bucket: txnHash: %v", txnBucketHash)
 
-	log.Printf("Start upload object")
+	return txnBucketHash, nil
+}
+
+func (c *BNBClient) ExistBucket(ctx *gin.Context, bucketName string) bool {
+	_, err := c.cli.HeadBucket(ctx, bucketName)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func (c *BNBClient) CreateObject(ctx *gin.Context, bucketName string, objectName string, buffer []byte) (string, error) {
+	if !c.ExistBucket(ctx, bucketName) {
+		txnBucketHash, _ := c.CreateBucket(ctx, bucketName)
+		log.Printf("Created/Checked bucket with txnHash: %v", txnBucketHash)
+	}
+
+	log.Printf("Start upload object.")
 	// Upload the object
 	txnHash, err := c.cli.CreateObject(ctx, bucketName, objectName, bytes.NewReader(buffer), types.CreateObjectOptions{})
-	// waitObjectSeal(c.cli, bucketName, objectName)
+
 	if util.HandleErr(err, "CreateObject failed --------2---------.") {
 		return "", err
 	}
 
+	log.Printf("Start put object.")
+	// Resumable upload object.
 	err = c.cli.PutObject(ctx, bucketName, objectName, int64(len(buffer)),
-		bytes.NewReader(buffer), types.PutObjectOptions{TxnHash: txnHash})
+		bytes.NewReader(buffer), types.PutObjectOptions{
+			PartSize:         1024 * 1024 * 16,
+			DisableResumable: false,
+			TxnHash:          txnHash})
+
+	// waitObjectSeal(c.cli, bucketName, objectName)
+
 	util.HandleErr(err, "PutObject")
 
 	log.Printf("CreateObject txnHash : %v", txnHash)
@@ -73,7 +108,7 @@ func (c *BNBClient) CreateObject(ctx context.Context, bucketName string, objectN
 	return txnHash, nil
 }
 
-func (c *BNBClient) GetObject(ctx context.Context, bucketName string, objectName string) ([]byte, error) {
+func (c *BNBClient) GetObject(ctx *gin.Context, bucketName string, objectName string) ([]byte, error) {
 	// Get the Object
 	reader, info, err := c.cli.GetObject(ctx, bucketName, objectName, types.GetObjectOptions{})
 	if util.HandleErr(err, "GetObject failed ------------4------------}") {
@@ -86,7 +121,85 @@ func (c *BNBClient) GetObject(ctx context.Context, bucketName string, objectName
 	return objectBytes, nil
 }
 
-func (c *BNBClient) ListObjects(ctx context.Context, bucketName string) (models.ObjectListResponse, error) {
+func (c *BNBClient) GetObjectResumable(ctx *gin.Context, bucketName string, objectName string, userUniqueID string) (string, error) {
+	// Path for storing the object - userUniqueID ensures each download has a unique file
+	// Construct file path
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Failed to get current working directory: %v", err)
+		return "", err
+	}
+
+	filePath := filepath.Join(cwd, "tmp", bucketName+"_"+objectName+"_"+userUniqueID)
+
+	baseTempFilePath := filePath + "_last"
+	// Initialize rangeStr to "bytes=0-"
+	rangeStr := "bytes=0-"
+
+	// Check if baseTempFilePath exists. If it exists, set the range from its current size.
+	if _, err := os.Stat(baseTempFilePath); err == nil {
+		if fileInfo, err := os.Stat(baseTempFilePath); err == nil {
+			rangeStr = fmt.Sprintf("bytes=%d-", fileInfo.Size())
+		}
+	} else if !os.IsNotExist(err) {
+		// Handle other potential errors when checking the file
+		log.Printf("Error while checking base temp file: %v with error: %v", baseTempFilePath, err)
+		return "", err
+	}
+
+	// Ensure the tempFilePath with the opts.Range exists.
+	tempFilePath := filePath + "_" + c.account.GetAddress().String() + rangeStr + types.TempFileSuffix
+	if _, err := os.Stat(tempFilePath); os.IsNotExist(err) {
+		file, err := os.Create(tempFilePath)
+		if err != nil {
+			util.ReportError(ctx, err, util.BNBClientCreateTempFileError)
+			log.Printf("Failed to create temp file with range: %v with error: %v", tempFilePath, err)
+			return "", err
+		}
+		file.Close()
+		log.Printf("Temp file with range: %v created successfully.", tempFilePath)
+	}
+
+	// Download the Object using FGetObjectResumable
+	err = c.cli.FGetObjectResumable(ctx, bucketName, objectName, filePath, types.GetObjectOptions{
+		SupportResumable: true,
+		Range:            rangeStr,
+		PartSize:         1024 * 1024 * 16,
+	})
+
+	if err != nil {
+		util.ReportError(ctx, err, util.BNBFGetObjectResumableError)
+		log.Printf("FGetObjectResumable failed for object name: %v with error: %v", objectName, err)
+		return "", err
+	}
+
+	if fileExists(baseTempFilePath) {
+		err = os.Remove(baseTempFilePath)
+		if err != nil {
+			util.ReportError(ctx, err, util.BNBClientDownloadError)
+			return "", err
+		}
+	}
+	// 4) rename temp file
+	err = os.Rename(filePath, baseTempFilePath)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("get object %s successfully. \n", objectName)
+
+	return baseTempFilePath, nil
+}
+
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func (c *BNBClient) ListObjects(ctx *gin.Context, bucketName string) (models.ObjectListResponse, error) {
 	objects, err := c.cli.ListObjects(ctx, bucketName, types.ListObjectsOptions{
 		ShowRemovedObject: false, Delimiter: "", MaxKeys: 100, EndPointOptions: &types.EndPointOptions{
 			Endpoint:  "",
@@ -113,15 +226,6 @@ func (c *BNBClient) ListObjects(ctx context.Context, bucketName string) (models.
 	return response, nil
 }
 
-func (c *BNBClient) CreateBucket(ctx context.Context, bucketName string) (string, error) {
-	// bucketName : testbucket
-	txnBucketHash, err := c.cli.CreateBucket(ctx, bucketName, c.primarySP, c.opts)
-	util.HandleErr(err, "CreateBucket failed ------------1-------.")
-	log.Printf("Create Bucket: txnHash: %v", txnBucketHash)
-
-	return txnBucketHash, nil
-}
-
 func waitObjectSeal(cli client.Client, bucketName, objectName string) {
 	ctx := context.Background()
 	// wait for the object to be sealed
@@ -141,6 +245,31 @@ func waitObjectSeal(cli client.Client, bucketName, objectName string) {
 				fmt.Printf("put object %s successfully \n", objectName)
 				return
 			}
+		}
+	}
+}
+
+func CleanupOldFiles() {
+	// Run this function in a goroutine at regular intervals to clean up old files
+	// Define a file age threshold as per your requirements
+	thresholdAge := 24 * time.Hour
+
+	tmpDir := "/tmp/"
+	files, err := ioutil.ReadDir(tmpDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, file := range files {
+		filePath := filepath.Join(tmpDir, file.Name())
+		fileInfo, err := os.Stat(filePath)
+		if err != nil {
+			log.Printf("Unable to stat file: %s", filePath)
+			continue
+		}
+
+		if time.Since(fileInfo.ModTime()) > thresholdAge {
+			os.Remove(filePath)
 		}
 	}
 }
